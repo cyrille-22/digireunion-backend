@@ -129,5 +129,64 @@ const verifyOTP = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── INSCRIPTION D'UNE NOUVELLE ASSOCIATION ────────────────────
+const register = async (req, res) => {
+  const { nom, telephone, nom_complet } = req.body;
 
-module.exports = { requestOTP, verifyOTP };
+  if (!nom || !telephone || !nom_complet) {
+    return res.status(400).json({
+      message: 'Nom association, téléphone et nom complet requis'
+    });
+  }
+
+  try {
+    // Générer un code unique pour l'association
+    const code_unique = nom
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 8) + Math.floor(Math.random() * 1000);
+
+    // Créer le tenant
+    const tenant = await pool.query(
+      `INSERT INTO tenants (nom, code_unique)
+       VALUES ($1, $2) RETURNING *`,
+      [nom, code_unique]
+    );
+
+    const tenant_id = tenant.rows[0].id;
+
+    // Créer le premier membre (Président)
+    const membre = await pool.query(
+      `INSERT INTO members
+        (tenant_id, nom_complet, telephone, role, statut)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [tenant_id, nom_complet, telephone, 'president', 'actif']
+    );
+
+    res.status(201).json({
+      message: `✅ Association "${nom}" créée avec succès !`,
+      association: tenant.rows[0],
+      president: membre.rows[0],
+      instructions: [
+        `Votre code unique : ${code_unique}`,
+        `Connectez-vous avec : ${telephone}`,
+        'Demandez un OTP pour accéder à votre espace'
+      ]
+    });
+
+  } catch (err) {
+    console.error('Erreur register :', err.message);
+    if (err.message.includes('unique')) {
+      return res.status(400).json({
+        message: 'Ce numéro de téléphone est déjà utilisé'
+      });
+    }
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+module.exports = {
+  requestOTP,
+  verifyOTP,
+  register
+};
