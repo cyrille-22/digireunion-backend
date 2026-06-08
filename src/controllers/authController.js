@@ -8,51 +8,52 @@ const requestOTP = async (req, res) => {
   const { telephone } = req.body;
 
   if (!telephone) {
-    return res.status(400).json({ message: 'Numéro de téléphone requis' });
+    return res.status(400).json({ message: 'Téléphone requis' });
   }
-
-  const phone = formatPhone(telephone);
 
   try {
     // Vérifier que le membre existe
-    const memberResult = await pool.query(
-      'SELECT id, nom_complet, role, tenant_id FROM members WHERE telephone = $1 AND statut = $2',
-      [phone, 'actif']
+    const membre = await pool.query(
+      `SELECT m.*, t.nom as association_nom
+       FROM members m
+       JOIN tenants t ON t.id = m.tenant_id
+       WHERE m.telephone = $1 AND m.statut != 'sorti'
+       LIMIT 1`,
+      [telephone]
     );
 
-    if (memberResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Numéro non reconnu. Contactez votre secrétaire.' });
+    if (membre.rows.length === 0) {
+      return res.status(404).json({
+        message: 'Numéro non trouvé dans notre système'
+      });
     }
 
-    // Générer et sauvegarder l'OTP
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    // Générer le code OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
-    // Invalider les anciens OTP du même numéro
+    // Invalider les anciens OTP
     await pool.query(
-      'UPDATE otp_codes SET used = TRUE WHERE telephone = $1 AND used = FALSE',
-      [phone]
+      `UPDATE otp_codes SET used = TRUE
+       WHERE telephone = $1 AND used = FALSE`,
+      [telephone]
     );
 
-    // Sauvegarder le nouvel OTP
+    // Sauvegarder le nouveau OTP
     await pool.query(
-      'INSERT INTO otp_codes (telephone, code, expires_at) VALUES ($1, $2, $3)',
-      [phone, otp, expiresAt]
+      `INSERT INTO otp_codes (telephone, code, expires_at)
+       VALUES ($1, $2, $3)`,
+      [telephone, code, expiresAt]
     );
 
-    // En production : envoyer par SMS/WhatsApp
-    // Pour le développement : on retourne l'OTP directement
-    console.log(`📱 OTP pour ${phone} : ${otp}`);
+    console.log('=============================');
+    console.log(`📱 OTP POUR ${telephone} : ${code}`);
+    console.log('=============================');
 
     res.json({
-        message: 'Code OTP envoyé',
-        // Temporaire — à supprimer en production réelle
-        code_otp: process.env.NODE_ENV !== 'production'
-          ? code
-          : undefined,
-        // En production on affiche quand même pour les tests
-        code_otp: code // ← temporaire jusqu'à intégration SMS
-      });
+      message: 'Code OTP généré',
+      code_otp: code // ← temporaire jusqu'à intégration SMS
+    });
 
   } catch (err) {
     console.error('Erreur requestOTP :', err.message);
