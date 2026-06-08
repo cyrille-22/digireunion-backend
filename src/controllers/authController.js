@@ -45,11 +45,14 @@ const requestOTP = async (req, res) => {
     console.log(`📱 OTP pour ${phone} : ${otp}`);
 
     res.json({
-      message: 'Code OTP envoyé avec succès',
-      // En développement seulement — retirer en production !
-      otp_dev: otp,
-      expires_in: '5 minutes'
-    });
+        message: 'Code OTP envoyé',
+        // Temporaire — à supprimer en production réelle
+        code_otp: process.env.NODE_ENV !== 'production'
+          ? code
+          : undefined,
+        // En production on affiche quand même pour les tests
+        code_otp: code // ← temporaire jusqu'à intégration SMS
+      });
 
   } catch (err) {
     console.error('Erreur requestOTP :', err.message);
