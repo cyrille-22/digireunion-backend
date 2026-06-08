@@ -37,6 +37,39 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 });
 
+// Mes cotisations par tontine
+router.get('/me/cotisations', authMiddleware, async (req, res) => {
+  const pool = require('../config/database');
+  try {
+    const result = await pool.query(
+      `SELECT
+        t.nom as tontine_nom,
+        t.nb_seances_cycle,
+        t.seance_courante,
+        mt.nb_parts,
+        mt.statut as statut_membre,
+        COUNT(CASE WHEN c.statut = 'cotise' THEN 1 END)
+          as nb_seances_cotisees,
+        COUNT(CASE WHEN c.statut = 'non_cotise' THEN 1 END)
+          as nb_seances_manquees,
+        COALESCE(SUM(CASE WHEN c.statut = 'cotise'
+          THEN c.montant_total ELSE 0 END), 0) as total_cotise
+       FROM membre_tontine mt
+       JOIN tontines t ON t.id = mt.tontine_id
+       LEFT JOIN cotisations c ON c.tontine_id = t.id
+         AND c.member_id = mt.member_id
+       WHERE mt.member_id = $1 AND mt.statut = 'actif'
+       GROUP BY t.nom, t.nb_seances_cycle, t.seance_courante,
+                mt.nb_parts, mt.statut`,
+      [req.user.id]
+    );
+
+    res.json({ tontines: result.rows });
+  } catch (err) {
+    console.error('Erreur cotisations membre :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
 // Mes finances
 router.get('/me/finances', authMiddleware, async (req, res) => {
   const pool = require('../config/database');
