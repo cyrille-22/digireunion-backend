@@ -28,6 +28,24 @@ const saisirCotisations = async (req, res) => {
     let nbNonCotises = 0;
     const nonCotises = [];
 
+    // Vérifier si ce membre a déjà cotisé à cette tontine cette séance
+      for (const c of cotisations) {
+        if (!c.a_cotise) continue;
+        
+        const dejaCoitis = await pool.query(
+          `SELECT id FROM cotisations
+          WHERE seance_id = $1 AND member_id = $2
+          AND tontine_id = $3`,
+          [seance_id, c.member_id, tontine_id]
+        );
+
+        if (dejaCoitis.rows.length > 0) {
+          return res.status(400).json({
+            message: `Un ou plusieurs membres ont déjà cotisé 
+                      à cette tontine pour cette séance`
+          });
+        }
+      }
     for (const c of cotisations) {
       const montant = c.nb_parts * montantPart;
 
