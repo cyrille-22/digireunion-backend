@@ -30,41 +30,44 @@ const saisirCotisations = async (req, res) => {
 
     // Vérifier si ce membre a déjà cotisé à cette tontine cette séance
       for (const c of cotisations) {
-        if (!c.a_cotise) continue;
-        
-        const dejaCoitis = await pool.query(
-          `SELECT id FROM cotisations
-          WHERE seance_id = $1 AND member_id = $2
-          AND tontine_id = $3`,
+        // Ignorer silencieusement si déjà cotisé pour cette tontine/séance
+        const existe = await pool.query(
+          `SELECT id, statut FROM cotisations
+          WHERE seance_id = $1 AND member_id = $2 AND tontine_id = $3`,
           [seance_id, c.member_id, tontine_id]
         );
 
-        if (dejaCoitis.rows.length > 0) {
-          return res.status(400).json({
-            message: `Un ou plusieurs membres ont déjà cotisé 
-                      à cette tontine pour cette séance`
-          });
+        if (existe.rows.length > 0 && existe.rows[0].statut === 'cotise') {
+          // Déjà cotisé — on ignore (pas d'erreur)
+          continue;
         }
-      }
-    for (const c of cotisations) {
-      const montant = c.nb_parts * montantPart;
 
-      // Enregistrer la cotisation
-      await pool.query(
-        `INSERT INTO cotisations 
-          (tenant_id, seance_id, member_id, tontine_id, 
-           nb_parts_cotisees, montant_total, statut)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT DO NOTHING`,
-        [
-          tenant_id, seance_id, c.member_id, tontine_id,
-          c.a_cotise ? c.nb_parts : 0,
-          c.a_cotise ? montant : 0,
-          c.a_cotise ? 'cotise' : 'non_cotise'
-        ]
-      );
+        if (!c.a_cotise) {
+          // Pas cotisé et pas encore enregistré — on ne fait rien
+          // (on ne veut pas créer des lignes "non_cotise" qui bloqueraient)
+          continue;
+        }
 
-      if (c.a_cotise) {
+        const montant = c.nb_parts * montantPart;
+
+        // Enregistrer ou mettre à jour la cotisation
+        if (existe.rows.length > 0) {
+          await pool.query(
+            `UPDATE cotisations SET
+              nb_parts_cotisees = $1, montant_total = $2, statut = 'cotise'
+            WHERE id = $3`,
+            [c.nb_parts, montant, existe.rows[0].id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO cotisations 
+              (tenant_id, seance_id, member_id, tontine_id, 
+              nb_parts_cotisees, montant_total, statut)
+            VALUES ($1,$2,$3,$4,$5,$6,'cotise')`,
+            [tenant_id, seance_id, c.member_id, tontine_id, c.nb_parts, montant]
+          );
+        }
+
         totalCotise += montant;
         nbCotises++;
 
@@ -99,19 +102,7 @@ const saisirCotisations = async (req, res) => {
           'UPDATE seances SET caisse_theorique = caisse_theorique + $1 WHERE id = $2',
           [montant, seance_id]
         );
-
-      } else {
-        nbNonCotises++;
-        // Récupérer le nom du membre
-        const membre = await pool.query(
-          'SELECT nom_complet FROM members WHERE id = $1',
-          [c.member_id]
-        );
-        if (membre.rows.length > 0) {
-          nonCotises.push(membre.rows[0].nom_complet);
-        }
       }
-    }
 
     res.json({
       message: '✅ Cotisations enregistrées',
@@ -257,9 +248,62 @@ const getHistoriqueSeances = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── MEMBRES EN RETARD DE COTISATION ──────────────────────────
+const getRetardsCotisation = async (req, res) => {
+  const { tontine_id, seance_id } = req.params;
+  const tenant_id = req.user.tenant_id;
+
+  try {
+    // Séances précédentes (toutes sauf la courante)
+    const result = await pool.query(
+      `SELECT m.id as member_id, m.nom_complet,
+              COUNT(s.id) as nb_seances_dues,
+              COUNT(c.id) as nb_cotise
+       FROM membre_tontine mt
+       JOIN members m ON m.id = mt.member_id
+       JOIN seances s ON s.tenant_id = mt.tenant_id
+         AND s.statut = 'close'
+       LEFT JOIN cotisations c ON c.member_id = m.id
+         AND c.tontine_id = mt.tontine_id
+         AND c.seance_id = s.id
+         AND c.statut = 'cotise'
+       WHERE mt.tontine_id = $1 AND mt.tenant_id = $2
+         AND mt.statut = 'actif'
+       GROUP BY m.id, m.nom_complet
+       HAVING COUNT(s.id) > COUNT(c.id)`,
+      [tontine_id, tenant_id]
+    );
+
+    res.json({ retards: result.rows });
+  } catch (err) {
+    console.error('Erreur getRetardsCotisation :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+// ── ÉTAT DES COTISATIONS D'UNE SÉANCE/TONTINE ────────────────
+const getEtatCotisations = async (req, res) => {
+  const { seance_id, tontine_id } = req.params;
+  const tenant_id = req.user.tenant_id;
+
+  try {
+    const result = await pool.query(
+      `SELECT member_id, statut, nb_parts_cotisees, montant_total
+       FROM cotisations
+       WHERE seance_id = $1 AND tontine_id = $2 AND tenant_id = $3`,
+      [seance_id, tontine_id, tenant_id]
+    );
+
+    res.json({ cotisations: result.rows });
+  } catch (err) {
+    console.error('Erreur getEtatCotisations :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
 
 module.exports = {
   saisirCotisations,
   getBilanSeance,
+  getEtatCotisations,
+  getRetardsCotisation,
   getHistoriqueSeances
 };

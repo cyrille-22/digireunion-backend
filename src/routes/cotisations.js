@@ -3,6 +3,8 @@ const router = express.Router();
 const {
   saisirCotisations,
   getBilanSeance,
+  getEtatCotisations,
+  getRetardsCotisation,
   getHistoriqueSeances
 } = require('../controllers/cotisationController');
 const {
@@ -21,5 +23,7 @@ router.get('/historique', getHistoriqueSeances);
 // Membres tontine
 router.post('/inscription', requireRole('president','secretaire'), inscrireMembre);
 router.get('/tontine/:tontine_id/membres', getMembresTontine);
+router.get('/etat/:seance_id/:tontine_id', getEtatCotisations);
+router.get('/retards/:tontine_id/:seance_id', getRetardsCotisation);
 
 module.exports = router;
