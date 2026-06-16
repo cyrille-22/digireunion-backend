@@ -116,5 +116,42 @@ const updateRubrique = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── SUPPRIMER UNE RUBRIQUE DE PRÊT/ÉPARGNE ───────────────────
+const supprimerRubrique = async (req, res) => {
+  const { id } = req.params;
+  const tenant_id = req.user.tenant_id;
 
-module.exports = { createRubrique, getRubriques, updateRubrique };
+  try {
+    const usage = await pool.query(
+      `SELECT
+        (SELECT COUNT(*) FROM prets WHERE rubrique_id = $1) as nb_prets,
+        (SELECT COUNT(*) FROM epargne_membres WHERE rubrique_id = $1
+          AND solde > 0) as nb_epargnes`,
+      [id]
+    );
+
+    if (parseInt(usage.rows[0].nb_prets) > 0 ||
+        parseInt(usage.rows[0].nb_epargnes) > 0) {
+      return res.status(400).json({
+        message: 'Cette rubrique a des prêts ou épargnes actifs. ' +
+          'Désactivez-la plutôt que de la supprimer.'
+      });
+    }
+
+    await pool.query(
+      'DELETE FROM epargne_membres WHERE rubrique_id = $1', [id]
+    );
+    await pool.query(
+      'DELETE FROM pret_rubriques WHERE id = $1 AND tenant_id = $2',
+      [id, tenant_id]
+    );
+
+    res.json({ message: '✅ Rubrique supprimée' });
+  } catch (err) {
+    console.error('Erreur supprimerRubrique :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+
+module.exports.supprimerRubrique = supprimerRubrique;
+module.exports = { createRubrique, getRubriques, updateRubrique, supprimerRubrique };

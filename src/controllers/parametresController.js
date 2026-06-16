@@ -144,5 +144,76 @@ const getStats = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── RÉINITIALISER L'ASSOCIATION (DANGER) ─────────────────────
+const reinitialiserAssociation = async (req, res) => {
+  const tenant_id = req.user.tenant_id;
+  const { confirmation } = req.body;
+
+  if (confirmation !== 'REINITIALISER') {
+    return res.status(400).json({
+      message: 'Confirmation invalide. Tapez exactement REINITIALISER'
+    });
+  }
+
+  try {
+    await pool.query('BEGIN');
+
+    // Supprimer toutes les données liées sauf le tenant et le président
+    await pool.query(
+      `DELETE FROM transactions WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM remboursements WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM prets WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM epargne_membres WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM cotisations WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM beneficiaires_tontine WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM nouvelles_familiales WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM ordre_du_jour WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM divers_seance WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM seances WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM membre_tontine WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM rubriques_deduction WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM pret_rubriques WHERE tenant_id = $1`, [tenant_id]);
+    await pool.query(
+      `DELETE FROM tontines WHERE tenant_id = $1`, [tenant_id]);
+
+    // Supprimer tous les membres sauf le président
+    await pool.query(
+      `DELETE FROM members WHERE tenant_id = $1 AND role != 'president'`,
+      [tenant_id]
+    );
+
+    // Réinitialiser le GAV et score du président
+    await pool.query(
+      `UPDATE members SET gav_solde = 0, score_fiabilite = 100
+       WHERE tenant_id = $1`,
+      [tenant_id]
+    );
+
+    await pool.query('COMMIT');
+
+    res.json({
+      message: '✅ Association réinitialisée. ' +
+        'Vous pouvez reconfigurer depuis zéro.'
+    });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Erreur reinitialiserAssociation :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+
+module.exports.reinitialiserAssociation = reinitialiserAssociation;
 
 module.exports = { getParametres, updateParametres, getStats };

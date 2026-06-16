@@ -12,5 +12,6 @@ router.get('/', getTontines);
 router.get('/:id', getTontineById);
 router.post('/', requireRole('president'), createTontine);
 router.put('/:id', requireRole('president'), updateTontine);
+router.delete('/:id', requireRole('president'), supprimerTontine);
 
 module.exports = router;

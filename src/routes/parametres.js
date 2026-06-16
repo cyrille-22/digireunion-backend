@@ -12,5 +12,6 @@ router.use(authMiddleware);
 router.get('/', getParametres);
 router.put('/', requireRole('president'), updateParametres);
 router.get('/stats', getStats);
+router.post('/reinitialiser', requireRole('president'), reinitialiserAssociation);
 
 module.exports = router;

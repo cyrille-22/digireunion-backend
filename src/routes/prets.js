@@ -10,5 +10,5 @@ router.use(authMiddleware);
 router.get('/', getRubriques);
 router.post('/', requireRole('president'), createRubrique);
 router.put('/:id', requireRole('president'), updateRubrique);
-
+router.delete('/rubriques/:id', requireRole('president'), supprimerRubrique);
 module.exports = router;

@@ -70,6 +70,8 @@ router.get('/me/cotisations', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 });
+router.patch('/:id/statut', requireRole('president'), toggleStatutMembre);
+router.delete('/:id', requireRole('president'), supprimerMembre);
 // Mes finances
 router.get('/me/finances', authMiddleware, async (req, res) => {
   const pool = require('../config/database');

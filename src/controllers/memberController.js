@@ -141,5 +141,87 @@ const deleteMember = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── CHANGER LE STATUT D'UN MEMBRE (actif/inactif) ────────────
+const toggleStatutMembre = async (req, res) => {
+  const { id } = req.params;
+  const tenant_id = req.user.tenant_id;
 
-module.exports = { addMember, getMembers, getMemberById, updateMember, deleteMember };
+  try {
+    const membre = await pool.query(
+      'SELECT statut, role FROM members WHERE id = $1 AND tenant_id = $2',
+      [id, tenant_id]
+    );
+
+    if (membre.rows.length === 0) {
+      return res.status(404).json({ message: 'Membre non trouvé' });
+    }
+
+    if (membre.rows[0].role === 'president') {
+      return res.status(400).json({
+        message: 'Impossible de désactiver le président'
+      });
+    }
+
+    const nouveauStatut = membre.rows[0].statut === 'actif'
+      ? 'inactif' : 'actif';
+
+    const result = await pool.query(
+      `UPDATE members SET statut = $1 WHERE id = $2 RETURNING *`,
+      [nouveauStatut, id]
+    );
+
+    res.json({
+      message: `✅ Membre ${nouveauStatut === 'actif'
+        ? 'activé' : 'désactivé'} !`,
+      membre: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Erreur toggleStatutMembre :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+
+// ── SUPPRIMER UN MEMBRE ───────────────────────────────────────
+const supprimerMembre = async (req, res) => {
+  const { id } = req.params;
+  const tenant_id = req.user.tenant_id;
+
+  try {
+    const membre = await pool.query(
+      'SELECT role FROM members WHERE id = $1 AND tenant_id = $2',
+      [id, tenant_id]
+    );
+
+    if (membre.rows.length === 0) {
+      return res.status(404).json({ message: 'Membre non trouvé' });
+    }
+
+    if (membre.rows[0].role === 'president') {
+      return res.status(400).json({
+        message: 'Impossible de supprimer le président'
+      });
+    }
+
+    // Vérifier s'il a des prêts en cours
+    const prets = await pool.query(
+      `SELECT COUNT(*) FROM prets
+       WHERE member_id = $1 AND statut = 'en_cours'`,
+      [id]
+    );
+
+    if (parseInt(prets.rows[0].count) > 0) {
+      return res.status(400).json({
+        message: 'Ce membre a des prêts en cours. ' +
+          'Soldez ses prêts avant de le supprimer.'
+      });
+    }
+
+    await pool.query('DELETE FROM members WHERE id = $1', [id]);
+
+    res.json({ message: '✅ Membre supprimé' });
+  } catch (err) {
+    console.error('Erreur supprimerMembre :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+module.exports = { addMember, getMembers, getMemberById, updateMember, deleteMember,toggleStatutMembre, supprimerMembre };

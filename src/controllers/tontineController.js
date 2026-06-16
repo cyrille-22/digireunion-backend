@@ -136,8 +136,41 @@ const updateTontine = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur' });
   }
 };
+// ── SUPPRIMER UNE TONTINE ─────────────────────────────────────
+const supprimerTontine = async (req, res) => {
+  const { id } = req.params;
+  const tenant_id = req.user.tenant_id;
 
+  try {
+    const cotisations = await pool.query(
+      'SELECT COUNT(*) FROM cotisations WHERE tontine_id = $1',
+      [id]
+    );
+
+    if (parseInt(cotisations.rows[0].count) > 0) {
+      return res.status(400).json({
+        message: 'Cette tontine a déjà des cotisations enregistrées. ' +
+          'Désactivez-la plutôt que de la supprimer.'
+      });
+    }
+
+    await pool.query(
+      'DELETE FROM membre_tontine WHERE tontine_id = $1', [id]
+    );
+    await pool.query(
+      'DELETE FROM tontines WHERE id = $1 AND tenant_id = $2',
+      [id, tenant_id]
+    );
+
+    res.json({ message: '✅ Tontine supprimée' });
+  } catch (err) {
+    console.error('Erreur supprimerTontine :', err.message);
+    res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+
+module.exports.supprimerTontine = supprimerTontine;
 module.exports = {
   createTontine, getTontines,
-  getTontineById, updateTontine
+  getTontineById, updateTontine, supprimerTontine
 };
